@@ -24,6 +24,7 @@ library(lubridate)
 library(ggplot2)
 library(scales)
 library(paletteer)
+library(viridis)
 library(corrplot)
 ```
 
@@ -73,9 +74,11 @@ data_eph_limpio %>%
       scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
       scale_x_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
       ggtitle("Distribución Ingreso por Ocupación Principal") +
-      labs(x = "Ingreso por Ocupación Principal", 
+      labs(x = "Ingreso por Ocupación Principal",
          y = "Densidad")
 
+
+#notese la tendencia en los encuestados a decir un valor redondo para el ignreso
 ```
 
 - A continuación, estudiamos la relación entre el Ingreso y algunas de las variables categóricas presentes en el data set.
@@ -96,7 +99,7 @@ data_eph_limpio %>%
     scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
     scale_x_discrete(labels = label_wrap(10)) +
     ggtitle("Ingreso por Ocupación Principal según Nivel Educativo") +
-    labs(x = "Nivel Educativo", 
+    labs(x = "Nivel Educativo",
          y = "Ingreso por Ocupación Principal")
 
 
@@ -104,25 +107,47 @@ data_eph_limpio %>%
 
 ```{r}
 
-data_eph_limpio %>% 
-  group_by(NIVEL_ED) %>% 
-  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
-  arrange(ingreso_promedio) %>% 
-  mutate(NIVEL_ED = fct_inorder(NIVEL_ED)) %>% 
-  ggplot(aes(x = NIVEL_ED, y = ingreso_promedio, fill = NIVEL_ED)) +
-    geom_col() +
-    theme_minimal() +
-    scale_fill_viridis_d() +
-    guides(fill = "none") +
-    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
-    scale_x_discrete(labels = label_wrap(10)) +
-    ggtitle("Ingreso por Ocupación Principal según Nivel Educativo") +
-    labs(x = "Nivel Educativo", 
-         y = "Ingreso por Ocupación Principal")
+lmodel <- linear_reg() %>%
+  set_engine("lm")
+
+wflow1 <- workflow() %>% 
+  add_model(lmodel) %>% 
+  add_formula(INGRESO_OCUP_PRINCIPAL ~ CANT_HORAS +
+                                       EDAD +
+                                       NIVEL_ED +  
+                                       SEXO:CANT_HORAS)                           #mostrar con métricas
+
+fit1 <- fit(wflow1, data_eph_limpio)
+
+fit1 %>% 
+  extract_fit_parsnip() %>% 
+  tidy()
+
 
 ```
 
 
+```{r}
+
+augment(fit1, new_data = data_eph_limpio %>% 
+          filter(INGRESO_OCUP_PRINCIPAL < quantile(INGRESO_OCUP_PRINCIPAL, .99))) %>% 
+  mutate(.resid = INGRESO_OCUP_PRINCIPAL - .pred) %>%
+  dplyr::select(INGRESO_OCUP_PRINCIPAL, .pred, .resid) %>%
+  #graficamos
+  ggplot(aes(y = .pred, x = INGRESO_OCUP_PRINCIPAL, color = .resid)) +
+    geom_point() +
+    theme_minimal()  +
+    geom_abline(
+      intercept = 0,
+      slope = 1,
+      linewidth = 1,
+      color = "grey"
+    ) +
+    scale_color_viridis(option = "C") +
+    ylim(0, 175000)
+
+
+```
 
 
 ```{r}
