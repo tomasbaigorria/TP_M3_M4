@@ -43,7 +43,8 @@ data_eph <- read_csv("./Data/M34_202103_eph.csv") %>%
   rename("SECTOR_PUB_PRIV" = "PP04A") %>%
   rename("CANT_HORAS" = "PP3E_TOT") %>%
   rename("INGRESO_OCUP_PRINCIPAL" = "P21") %>% 
-  select(3:15)
+  select(3:15) %>% 
+  relocate(INGRESO_OCUP_PRINCIPAL)
 
 ```
 
@@ -63,11 +64,11 @@ data_eph <- read_csv("./Data/M34_202103_eph.csv") %>%
 top10ingresos <- top_n(data_eph %>% select(INGRESO_OCUP_PRINCIPAL), 10) %>% 
   arrange(desc(INGRESO_OCUP_PRINCIPAL))
 
-data_eph_limpio <- data_eph %>% filter(INGRESO_OCUP_PRINCIPAL > 0)
+data_eph_limpio <- data_eph %>% filter(INGRESO_OCUP_PRINCIPAL > 0) %>% 
+  filter(INGRESO_OCUP_PRINCIPAL < quantile(INGRESO_OCUP_PRINCIPAL, .99))
 
 data_eph_limpio %>% 
   select(INGRESO_OCUP_PRINCIPAL) %>%
-  filter(INGRESO_OCUP_PRINCIPAL < quantile(INGRESO_OCUP_PRINCIPAL, .99)) %>%
     ggplot(aes(x = INGRESO_OCUP_PRINCIPAL)) +
       geom_density(alpha = 0.4, fill = "lightblue") +
       theme_minimal() +
@@ -94,16 +95,156 @@ data_eph_limpio %>%
   ggplot(aes(x = NIVEL_ED, y = ingreso_promedio, fill = NIVEL_ED)) +
     geom_col() +
     theme_minimal() +
-    scale_fill_viridis_d() +
+    scale_fill_viridis_d(option = "A") +
     guides(fill = "none") +
     scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
     scale_x_discrete(labels = label_wrap(10)) +
-    ggtitle("Ingreso por Ocupación Principal según Nivel Educativo") +
+    ggtitle("Ingreso promedio por Ocupación Principal según Nivel Educativo") +
     labs(x = "Nivel Educativo",
+         y = "Ingreso por Ocupación Principal")
+
+```
+
+    - Como vemos, existe una relación clara entre el nivel educativo de las personas y su remuneración percibida.
+
+    - Lo mismo ocurre con ...
+    
+```{r}
+data_eph_limpio %>% 
+  group_by(AGLOMERADO) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>% 
+  mutate(AGLOMERADO = fct_inorder(AGLOMERADO)) %>% 
+  ggplot(aes(x = ingreso_promedio, y = AGLOMERADO, fill = AGLOMERADO)) +
+    geom_col() +
+    theme_minimal() +
+    scale_fill_viridis_d(option = "B") +
+    guides(fill = "none") +
+    scale_x_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_y_discrete(labels = label_wrap(100)) +
+    ggtitle("Ingreso promedio por Ocupación Principal según Aglomerado") +
+    labs(x = "Ingreso por Ocupación Principal",
+         y = "Aglomerado")
+```
+
+```{r}
+data_eph_limpio %>% 
+  group_by(SEXO) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>% 
+  mutate(SEXO = fct_inorder(SEXO)) %>% 
+  ggplot(aes(x = SEXO, y = ingreso_promedio, fill = SEXO)) +
+    geom_col(width = 0.5) +
+    theme_minimal() +
+    guides(fill = "none") +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_x_discrete(labels = label_wrap(100)) +
+    ggtitle("Ingreso promedio por Ocupación Principal según Sexo") +
+    labs(x = "Sexo",
+         y = "Ingreso por Ocupación Principal")
+```
+
+
+    
+    
+    
+    
+
+- Analicemos ahora la relación de nuestra variable de estudio con las variables numéricas del data set: Cantidad de Horas de Trabajo y Edad. 
+
+```{r}
+max(data_eph_limpio$CANT_HORAS)
+
+data_eph_limpio <- data_eph_limpio %>% 
+  filter(CANT_HORAS < 168)
+  
+```
+
+    - En primer lugar, observamos la existencia de valores absurdos (999 horas trabajadas) en nuestra primer variable, los cuales limpiamos previo a graficar.
+    
+    - Asimismo, vemos una variedad de registros con ingresos mayores a cero y horas trabajadas nulas que corresponden a individuos que declaran no haber trabajado la semana previa (generalmente debido a vacaciones, enfermedad, etc.). Decidimos filtrar estos casos para mejorar la performance del modelo. 
+    
+    
+```{r}
+
+data_eph_limpio %>%
+  filter(INGRESO_OCUP_PRINCIPAL < quantile(INGRESO_OCUP_PRINCIPAL, .99)) %>% 
+  filter(CANT_HORAS > 0) %>% 
+  ggplot(aes(x = CANT_HORAS, y = INGRESO_OCUP_PRINCIPAL)) +
+      geom_smooth(
+      method='lm',
+      se = FALSE,
+      color = 'red') + 
+    geom_point() +
+    theme_minimal() +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    ggtitle("Ingreso por Ocupación Principal y Cantidad de Horas Trabajadas") +
+    labs(x = "Cantidad de horas trabajadas",
          y = "Ingreso por Ocupación Principal")
 
 
 ```
+
+    - El gráfico da cuenta de una relación difusa entre las dos variables. Algo similar ocurre con la edad:
+
+    
+```{r}
+
+data_eph_limpio %>%
+  ggplot(aes(x = EDAD, y = INGRESO_OCUP_PRINCIPAL)) +
+      #geom_smooth(
+      #method = "lm",
+      #se = FALSE,
+      #color = 'red') + 
+    geom_point() +
+    theme_minimal() +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    ggtitle("Ingreso por Ocupación Principal y Edad") +
+    labs(x = "Edad",
+         y = "Ingreso por Ocupación Principal")
+
+```
+
+    - En el caso de la edad, vemos que la distribución de los datos se asemeja a una campana de gauss. Esto se vincula naturalmente con la ocurrencia de menores ingresos pasada la edad jubilatoria. Así lo visualizamos en el siguiente gráfico:
+
+    
+```{r}
+
+data_eph_limpio %>% filter(EDAD < 60) %>%                     
+  ggplot(aes(x = EDAD, y = INGRESO_OCUP_PRINCIPAL)) +
+    geom_smooth(
+        method = "lm",
+        se = FALSE,
+        color = 'red') + 
+    geom_point() +
+    theme_minimal() +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    ggtitle("Ingreso por Ocupación Principal y Edad") +
+    labs(x = "Edad",
+         y = "Ingreso por Ocupación Principal")
+
+```
+
+
+```{r}
+
+lmodel <- linear_reg() %>%
+  set_engine("lm")
+
+wflow1 <- workflow() %>% 
+  add_model(lmodel) %>% 
+  add_formula(INGRESO_OCUP_PRINCIPAL ~ NIVEL_ED)  
+                                                                                 #mostrar con métricas
+fit1 <- fit(wflow1, data_eph_limpio)
+
+fit1 %>% 
+  extract_fit_parsnip() %>% 
+  tidy()
+
+
+```
+
+
 
 ```{r}
 
