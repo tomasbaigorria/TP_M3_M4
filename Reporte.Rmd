@@ -9,7 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-#Preparación y exploración de datos
+# Preparación y exploración de datos
 
 ### Importación de librerías.
 
@@ -28,7 +28,7 @@ library(viridis)
 library(corrplot)
 ```
 
-###Preparación del dataset.
+### Preparación del dataset.
 
 - Renombramos las variables codificadas y eliminamos las columnas que consideramos irrelevantes (CODUSU, y Nro. de Hogar).
 
@@ -43,6 +43,7 @@ data_eph <- read_csv("./Data/M34_202103_eph.csv") %>%
   rename("SECTOR_PUB_PRIV" = "PP04A") %>%
   rename("CANT_HORAS" = "PP3E_TOT") %>%
   rename("INGRESO_OCUP_PRINCIPAL" = "P21") %>% 
+  rename("ESTADO_CONYUGAL" = "ESTADO CONYUGAL") %>% 
   select(3:15) %>% 
   relocate(INGRESO_OCUP_PRINCIPAL)
 
@@ -58,7 +59,6 @@ data_eph <- read_csv("./Data/M34_202103_eph.csv") %>%
     
     - Luego elaboramos un gráfico de densidad.
 
-
 ```{r}
 
 top10ingresos <- top_n(data_eph %>% select(INGRESO_OCUP_PRINCIPAL), 10) %>% 
@@ -67,10 +67,14 @@ top10ingresos <- top_n(data_eph %>% select(INGRESO_OCUP_PRINCIPAL), 10) %>%
 data_eph_limpio <- data_eph %>% filter(INGRESO_OCUP_PRINCIPAL > 0) %>% 
   filter(INGRESO_OCUP_PRINCIPAL < quantile(INGRESO_OCUP_PRINCIPAL, .99))
 
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
 data_eph_limpio %>% 
   select(INGRESO_OCUP_PRINCIPAL) %>%
     ggplot(aes(x = INGRESO_OCUP_PRINCIPAL)) +
-      geom_density(alpha = 0.4, fill = "lightblue") +
+      geom_density(alpha = 0.4, fill = "cyan") +
       theme_minimal() +
       scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
       scale_x_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
@@ -78,14 +82,14 @@ data_eph_limpio %>%
       labs(x = "Ingreso por Ocupación Principal",
          y = "Densidad")
 
-
-#notese la tendencia en los encuestados a decir un valor redondo para el ignreso
 ```
 
-- A continuación, estudiamos la relación entre el Ingreso y algunas de las variables categóricas presentes en el data set.
+    - Como curiosidad, notamos la existencia de picos de densidad en los números "redondos", los cuales asociamos tanto a un sesgo en los encuestados al redondear su salario como a un posible sesgo en los empleadores a la hora de definir los salarios de sus empleados. 
+
+- A continuación, estudiamos la relación entre el ingreso y algunas de las variables categóricas presentes en el data set.
 
 
-```{r}
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
 
 data_eph_limpio %>% 
   group_by(NIVEL_ED) %>% 
@@ -95,7 +99,7 @@ data_eph_limpio %>%
   ggplot(aes(x = NIVEL_ED, y = ingreso_promedio, fill = NIVEL_ED)) +
     geom_col() +
     theme_minimal() +
-    scale_fill_viridis_d(option = "A") +
+    scale_fill_viridis_d(alpha = 0.9, option = "A") +
     guides(fill = "none") +
     scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
     scale_x_discrete(labels = label_wrap(10)) +
@@ -107,9 +111,10 @@ data_eph_limpio %>%
 
     - Como vemos, existe una relación clara entre el nivel educativo de las personas y su remuneración percibida.
 
-    - Lo mismo ocurre con ...
+    - Lo mismo ocurre con algunas de las demás variables categóricas: Aglomerado, Sexo, Categoría Ocupacional y Categoría/sector.
     
-```{r}
+    
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
 data_eph_limpio %>% 
   group_by(AGLOMERADO) %>% 
   summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
@@ -127,14 +132,15 @@ data_eph_limpio %>%
          y = "Aglomerado")
 ```
 
-```{r}
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
 data_eph_limpio %>% 
   group_by(SEXO) %>% 
   summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
   arrange(ingreso_promedio) %>% 
   mutate(SEXO = fct_inorder(SEXO)) %>% 
   ggplot(aes(x = SEXO, y = ingreso_promedio, fill = SEXO)) +
-    geom_col(width = 0.5) +
+    geom_col(alpha = 0.8, width = 0.5) +
     theme_minimal() +
     guides(fill = "none") +
     scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
@@ -144,20 +150,202 @@ data_eph_limpio %>%
          y = "Ingreso por Ocupación Principal")
 ```
 
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+data_eph_limpio %>% 
+  group_by(CAT_OCUP) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>% 
+  mutate(CAT_OCUP = fct_inorder(CAT_OCUP)) %>% 
+  ggplot(aes(x = CAT_OCUP, y = ingreso_promedio, fill = CAT_OCUP)) +
+    geom_col(width = 0.5) +
+    theme_minimal() +
+    guides(fill = "none") +
+    scale_fill_viridis_d(alpha = 0.9, option = "B") +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_x_discrete(labels = label_wrap(100)) +
+    ggtitle("Ingreso promedio por Ocupación Principal según Categoría Ocupacional") +
+    labs(x = "Categoría Ocupacional",
+         y = "Ingreso por Ocupación Principal")
+```
 
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+data_eph_limpio %>% 
+  group_by(CATEGORIA) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>%
+  mutate(CATEGORIA = fct_inorder(CATEGORIA)) %>% 
+  slice_head(n = 10)
+
+data_eph_limpio %>% 
+  group_by(CATEGORIA) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>%
+  mutate(CATEGORIA = fct_inorder(CATEGORIA)) %>% 
+  slice_tail(n = 10)
+
+data_eph_limpio %>% 
+  group_by(CATEGORIA) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>%
+  mutate(CATEGORIA = fct_inorder(CATEGORIA)) %>% 
+  slice(26, 41, 48)
+
+data_eph_limpio %>% 
+  group_by(CATEGORIA) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>%
+  mutate(CATEGORIA = fct_inorder(CATEGORIA)) %>% 
+  ggplot(aes(x = CATEGORIA, y = ingreso_promedio, fill = CATEGORIA)) +
+    geom_col() +
+    theme_minimal() +
+    scale_fill_viridis_d(option = "B") +
+    guides(fill = "none") +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_x_discrete(labels = NULL) +
+    ggtitle("Ingreso promedio por Ocupación Principal según Categoría") +
+    labs(x = "Categoría",
+         y = "Ingreso por Ocupación Principal") +
+    geom_label(data = data_eph_limpio %>% group_by(CATEGORIA) %>% 
+      summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+      arrange(ingreso_promedio) %>%
+      mutate(CATEGORIA = fct_inorder(CATEGORIA)) %>%
+      filter(CATEGORIA %in% c("Ocupaciones de los servicios de alojamiento y turismo",
+                              "Funcionarios del poder ejecutivo nacional, provincial, municipal y/o departamental",
+                              "Ocupaciones de la investigación",
+                              "Funcionarios del poder judicial, federal, nacional, provincial, municipal y/o departamental"))
+    ,aes(label = CATEGORIA),
+    size = 2,
+    colour = "black",
+    nudge_x = -14,
+    nudge_y = 1)
+
+```
+
+- A continuación, visualizamos algunas variables categóricas que consideramos poco significativas para el modelo y explicamos los motivos:
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+data_eph_limpio %>% 
+  group_by(INTENSI) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>% 
+  mutate(INTENSI = fct_inorder(INTENSI)) %>% 
+  ggplot(aes(x = INTENSI, y = ingreso_promedio, fill = INTENSI)) +
+    geom_col(width = 0.5) +
+    theme_minimal() +
+    guides(fill = "none") +
+    scale_fill_viridis_d(option = "B") +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_x_discrete(labels = label_wrap(100)) +
+    ggtitle("Ingreso promedio por Ocupación Principal según Intensidad de Ocupación") +
+    labs(x = "Intensidad de Ocupación",
+         y = "Ingreso por Ocupación Principal")
+```
+
+    - En el caso de Intensidad de Ocupación, vemos por un lado la existencia de una variable correspondiente a los Ocupados que declaran no haber trabajado durante la semana previa a la encuesta. Más adelante removeremos estos casos para mejorar el modelo.
     
+    - Por otro lado, notamos que existe solo una magra diferencia en los promedios salariales de quienes declaran ser ocupados plenos y quienes declaran estar sobreocupados.
     
+    - Por último, creemos que es posible capturar de mejor manera el factor horas de trabajo mediante la variable numérica correspondiente, la cual analizaremos en detalle posteriormente. 
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+data_eph_limpio %>% 
+    group_by(CALIFICACION) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>% 
+  mutate(CALIFICACION = fct_inorder(CALIFICACION)) %>% 
+  ggplot(aes(x = CALIFICACION, y = ingreso_promedio, fill = CALIFICACION)) +
+    geom_col(width = 0.5) +
+    theme_minimal() +
+    guides(fill = "none") +
+    scale_fill_viridis_d(option = "B") +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_x_discrete(labels = label_wrap(100)) +
+    ggtitle("Ingreso promedio por Ocupación Principal según Calificación") +
+    labs(x = "Calificación",
+         y = "Ingreso por Ocupación Principal")
+```
+
+```{r, message = FALSE, warning = FALSE}
+datos_imprecisos <- data_eph_limpio %>% select(CALIFICACION) %>% 
+  filter(CALIFICACION %in% c("otro", "Ns.Nc", "falta informacion"))
+
+count(datos_imprecisos)
+```
+
+
+    - En el caso de la variable Calificación, observamos en primer lugar la existencia de algunos valores poco prácticos para el modelo: "otro", "Ns.Nc." y "falta información".
     
-    
+    - Si bien se trata de sólo 84 valores, consideramos que la cuestión de la calificación y la formación de los encuestados puede ser capturada más nítidamente mediante el nivel educativo. (debatible)
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+data_eph_limpio %>% 
+  group_by(SECTOR_PUB_PRIV) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>% 
+  mutate(SECTOR_PUB_PRIV = fct_inorder(SECTOR_PUB_PRIV)) %>% 
+  ggplot(aes(x = SECTOR_PUB_PRIV, y = ingreso_promedio, fill = SECTOR_PUB_PRIV)) +
+    geom_col(width = 0.5) +
+    theme_minimal() +
+    guides(fill = "none") +
+    scale_fill_viridis_d(option = "D", alpha = 0.8) +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_x_discrete(labels = label_wrap(100)) +
+    ggtitle("Ingreso promedio por Ocupación Principal según Sector") +
+    labs(x = "Sector",
+         y = "Ingreso por Ocupación Principal")
+```
+
+    - Para el caso de la ocupación principal, consideramos que 1. la categoría "de otro tipo" no es lo suficientemente clara como para ser relevante y 2. la variable de sector/categoría captura el mismo elemento con mayor claridad. 
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+unique(data_eph_limpio$ESTADO_CONYUGAL)
+
+data_eph_limpio <- data_eph_limpio %>% 
+  mutate(ESTADO_CONYUGAL = str_remove(ESTADO_CONYUGAL, "\\?")) %>%
+  mutate(ESTADO_CONYUGAL = str_replace_all(ESTADO_CONYUGAL, "divorsiado", "divorciado"))
+
+base_grafico_combi <- data_eph_limpio %>% 
+                        group_by(ESTADO_CONYUGAL) %>% 
+                        summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL), edad_promedio = mean(EDAD)) %>% 
+                        arrange(ingreso_promedio) %>% 
+                        mutate(ESTADO_CONYUGAL = fct_inorder(ESTADO_CONYUGAL))
+
+barras <- ggplot(data = base_grafico_combi, aes(x = ESTADO_CONYUGAL, y = ingreso_promedio, fill = ESTADO_CONYUGAL)) +
+              geom_col(width = 0.5) +
+              theme_minimal() +
+              guides(fill = "none") +
+              scale_fill_viridis_d(alpha = 0.8) +
+              scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+              scale_x_discrete(labels = label_wrap(100)) +
+              labs(x = "Estado Conyugal",
+                   y = "Ingreso por Ocupación Principal")
+
+grafico_combi <- barras + geom_point(data = base_grafico_combi, 
+                                     aes(y = edad_promedio*1000), 
+                                     color = "darkgrey") +
+                     scale_y_continuous(sec.axis = sec_axis(trans=~./1000 , name="Edad Promedio"), 
+                     breaks = pretty_breaks(), labels = comma) +
+                     ggtitle("")
+
+grafico_combi
+```
+
+    - Finalmente, tenemos el Estado Conyugal del individuo. Creemos que no es relevante para el análisis dada la correlación existente entre la edad y el estado conyugal de las personas, la cual visualizamos en el gráfico.
 
 - Analicemos ahora la relación de nuestra variable de estudio con las variables numéricas del data set: Cantidad de Horas de Trabajo y Edad. 
 
-```{r}
+```{r, message = FALSE, warning = FALSE}
 max(data_eph_limpio$CANT_HORAS)
 
-data_eph_limpio <- data_eph_limpio %>% 
-  filter(CANT_HORAS < 168)
-  
+min(data_eph_limpio$CANT_HORAS)
+
+count(data_eph_limpio %>% filter(CANT_HORAS == 0))
+
+count(data_eph_limpio %>% filter(INTENSI == "Ocupado que no trabajo en la semana"))
+
 ```
 
     - En primer lugar, observamos la existencia de valores absurdos (999 horas trabajadas) en nuestra primer variable, los cuales limpiamos previo a graficar.
@@ -165,12 +353,15 @@ data_eph_limpio <- data_eph_limpio %>%
     - Asimismo, vemos una variedad de registros con ingresos mayores a cero y horas trabajadas nulas que corresponden a individuos que declaran no haber trabajado la semana previa (generalmente debido a vacaciones, enfermedad, etc.). Decidimos filtrar estos casos para mejorar la performance del modelo. 
     
     
-```{r}
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+data_eph_limpio <- data_eph_limpio %>% 
+  filter(CANT_HORAS > 0 & CANT_HORAS < 168) %>% 
+  filter(INTENSI != "Ocupado que no trabajo en la semana")
 
 data_eph_limpio %>%
-  filter(INGRESO_OCUP_PRINCIPAL < quantile(INGRESO_OCUP_PRINCIPAL, .99)) %>% 
-  filter(CANT_HORAS > 0) %>% 
-  ggplot(aes(x = CANT_HORAS, y = INGRESO_OCUP_PRINCIPAL)) +
+  filter(INGRESO_OCUP_PRINCIPAL < quantile(INGRESO_OCUP_PRINCIPAL, .99)) %>%
+  ggplot(aes(x = CANT_HORAS, y = INGRESO_OCUP_PRINCIPAL, color = INTENSI)) +
       geom_smooth(
       method='lm',
       se = FALSE,
@@ -180,15 +371,16 @@ data_eph_limpio %>%
     scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
     ggtitle("Ingreso por Ocupación Principal y Cantidad de Horas Trabajadas") +
     labs(x = "Cantidad de horas trabajadas",
-         y = "Ingreso por Ocupación Principal")
+         y = "Ingreso por Ocupación Principal",
+         color = "Intensidad de Ocupación")
 
 
 ```
 
-    - El gráfico da cuenta de una relación difusa entre las dos variables. Algo similar ocurre con la edad:
+    - El gráfico da cuenta de una relación clara entre las dos variables. En el caso de la edad, la relación es un tanto más difusa:
 
     
-```{r}
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
 
 data_eph_limpio %>%
   ggplot(aes(x = EDAD, y = INGRESO_OCUP_PRINCIPAL)) +
@@ -196,7 +388,7 @@ data_eph_limpio %>%
       #method = "lm",
       #se = FALSE,
       #color = 'red') + 
-    geom_point() +
+    geom_point(color = "darkgray") +
     theme_minimal() +
     scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
     ggtitle("Ingreso por Ocupación Principal y Edad") +
@@ -205,13 +397,38 @@ data_eph_limpio %>%
 
 ```
 
-    - En el caso de la edad, vemos que la distribución de los datos se asemeja a una campana de gauss. Esto se vincula naturalmente con la ocurrencia de menores ingresos pasada la edad jubilatoria. Así lo visualizamos en el siguiente gráfico:
-
+    - En este caso, vemos que la distribución de los datos se asemeja a una campana de gauss. A priori, consideramos que ello puede estar vinculado con la ocurrencia de menores ingresos pasada la edad jubilatoria. Así lo visualizamos en el siguiente gráfico:
     
-```{r}
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+data_eph_limpio %>% 
+  mutate(MAYOR_65 = ifelse(EDAD > 65, "Mayor de 65", "Menor de 65")) %>% 
+  group_by(MAYOR_65, SEXO) %>% 
+  summarise(ingreso_promedio = median(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>% 
+  mutate(MAYOR_65 = fct_inorder(MAYOR_65)) %>% 
+  ggplot(aes(x = MAYOR_65, y = ingreso_promedio, fill = SEXO)) +
+    geom_col(width = 0.5, position = position_dodge2(preserve = "single", padding = 0), alpha = 0.7) +
+    theme_minimal() +
+    guides() +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_x_discrete(labels = label_wrap(100)) +
+    ggtitle("Mediana del ingreso por Ocupación Principal según edad jubilatoria y sexo") +
+    labs(x = "Sector",
+         y = "Ingreso por Ocupación Principal")
+  
+```
 
-data_eph_limpio %>% filter(EDAD < 60) %>%                     
-  ggplot(aes(x = EDAD, y = INGRESO_OCUP_PRINCIPAL)) +
+    - Usamos la mediana para atenuar el peso de los outliers y de la disparidad en el número de registros presnetes en cada subgrupo. 
+    
+    - En base a lo visto, creemos que puede ser una buena idea controlar la variable edad por la edad jubilatoria y el sexo.
+    
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+data_eph_limpio <- data_eph_limpio %>% 
+  mutate(MAYOR_65 = ifelse(EDAD > 65, "Mayor de 65", "Menor de 65"))
+
+data_eph_limpio %>% filter(EDAD <= 65) %>%                     
+  ggplot(aes(x = EDAD, y = INGRESO_OCUP_PRINCIPAL, color = SEXO)) +
     geom_smooth(
         method = "lm",
         se = FALSE,
@@ -225,39 +442,24 @@ data_eph_limpio %>% filter(EDAD < 60) %>%
 
 ```
 
-
+Aglomerado, Sexo, Categoría Ocupacional y Categoría/sector
 ```{r}
+names(data_eph_limpio)
 
 lmodel <- linear_reg() %>%
   set_engine("lm")
 
 wflow1 <- workflow() %>% 
   add_model(lmodel) %>% 
-  add_formula(INGRESO_OCUP_PRINCIPAL ~ NIVEL_ED)  
-                                                                                 #mostrar con métricas
-fit1 <- fit(wflow1, data_eph_limpio)
-
-fit1 %>% 
-  extract_fit_parsnip() %>% 
-  tidy()
-
-
-```
-
-
-
-```{r}
-
-lmodel <- linear_reg() %>%
-  set_engine("lm")
-
-wflow1 <- workflow() %>% 
-  add_model(lmodel) %>% 
-  add_formula(INGRESO_OCUP_PRINCIPAL ~ CANT_HORAS +
+  add_formula(INGRESO_OCUP_PRINCIPAL ~ AGLOMERADO +
+                                       NIVEL_ED +
+                                       SEXO +
+                                       CATEGORIA +
+                                       CAT_OCUP+
                                        EDAD +
-                                       NIVEL_ED +  
-                                       SEXO:CANT_HORAS)                           #mostrar con métricas
-
+                                       INTENSI:CANT_HORAS +
+                                       SEXO:CANT_HORAS)  
+                                                
 fit1 <- fit(wflow1, data_eph_limpio)
 
 fit1 %>% 
@@ -270,8 +472,7 @@ fit1 %>%
 
 ```{r}
 
-augment(fit1, new_data = data_eph_limpio %>% 
-          filter(INGRESO_OCUP_PRINCIPAL < quantile(INGRESO_OCUP_PRINCIPAL, .99))) %>% 
+augment(fit1, new_data = data_eph_limpio) %>% 
   mutate(.resid = INGRESO_OCUP_PRINCIPAL - .pred) %>%
   dplyr::select(INGRESO_OCUP_PRINCIPAL, .pred, .resid) %>%
   #graficamos
@@ -285,44 +486,8 @@ augment(fit1, new_data = data_eph_limpio %>%
       color = "grey"
     ) +
     scale_color_viridis(option = "C") +
-    ylim(0, 175000)
-
-
-```
-
-
-```{r}
-
-names(data_eph_limpio) <- gsub(x = names(data_eph_limpio),
-                            pattern = "\\_",
-                            replacement = " ")
-
-names(data_eph_limpio)
-
-data_eph_limpio <- data_eph_limpio %>% relocate(`INGRESO OCUP PRINCIPAL`)
-
-matriz_corr1 <- c("INGRESO OCUP PRINCIPAL", "NIVEL ED", "SEXO", "CANT HORAS")
-
-ggpairs(data_eph_limpio, #%>% select(!AGLOMERADO & !CATEGORIA), 
-        labeller = label_wrap_gen(width = 10), 
-        columns = matriz_corr1) +
-  theme_minimal() +
-  theme(strip.text.x = element_text(size = 10),
-        strip.text.y = element_text(size = 10))
-  
-data_corr <- data_eph_limpio %>% 
-  select_if(is.numeric) %>%
-  cor() %>% 
-  corrplot(tl.col = "black", method = "square")
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_x_continuous(labels = comma_format(big.mark = ".", decimal.mark = ","))
 
 ```
-
-
-
-
-
-
-
-
-
 
