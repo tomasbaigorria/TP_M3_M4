@@ -1,0 +1,810 @@
+---
+title: "TP M3 M4"
+author: "Tomás Emilio Baigorria e Iván Robles Urquiza"
+date: '2024-02-12'
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+# Preparación y exploración de datos
+
+### Importación de librerías.
+
+```{r, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(tidymodels)
+tidymodels_prefer()
+library(GGally)
+library(gtsummary)
+library(gt)
+library(lubridate)
+library(ggplot2)
+library(scales)
+library(paletteer)
+library(viridis)
+library(corrplot)
+library(hrbrthemes)
+library(foreach)
+library(rpart.plot)
+library(car)
+library(baguette)
+```
+
+### Preparación del dataset.
+
+- Renombramos las variables codificadas y eliminamos las columnas que consideramos irrelevantes (CODUSU, y Nro. de Hogar).
+
+
+```{r, message = FALSE, warning = FALSE}
+
+data_eph <- read_csv("./Data/M34_202103_eph.csv") %>% 
+  rename("ROL_HOGAR" = "CH03") %>% 
+  rename("SEXO" = "CH04") %>% 
+  rename("EDAD" = "CH06") %>%
+  rename("ESTADO CONYUGAL" = "CH07") %>%
+  rename("SECTOR_PUB_PRIV" = "PP04A") %>%
+  rename("CANT_HORAS" = "PP3E_TOT") %>%
+  rename("INGRESO_OCUP_PRINCIPAL" = "P21") %>% 
+  rename("ESTADO_CONYUGAL" = "ESTADO CONYUGAL") %>% 
+  select(3:15) %>% 
+  relocate(INGRESO_OCUP_PRINCIPAL)
+
+```
+
+###Exploración de los datos
+
+- Comenzamos con el estudio de la distribución de nuestra variable objetivo, el ingreso percibido por la ocupación principal:
+
+    - En una primera iteración del gráfico observamos la presencia de un outlier, el cual filtramos excluyendo de la muestra el percentil superior.
+    
+    - Observamos también la existencia de valores negativos (-9) y nulos, que corresponden a "no respuesta" y a "no les corresponde la secuencia alcanzada", respectivamente. Decidimos quitarlos para obtener datos más homogéneos.
+    
+    - Luego elaboramos un gráfico de densidad.
+
+```{r}
+
+top10ingresos <- top_n(data_eph %>% select(INGRESO_OCUP_PRINCIPAL), 10) %>% 
+  arrange(desc(INGRESO_OCUP_PRINCIPAL))
+
+data_eph_limpio <- data_eph %>% filter(INGRESO_OCUP_PRINCIPAL > 0) %>% 
+  filter(INGRESO_OCUP_PRINCIPAL < quantile(INGRESO_OCUP_PRINCIPAL, .99))
+
+```
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+data_eph_limpio %>% 
+  select(INGRESO_OCUP_PRINCIPAL) %>%
+    ggplot(aes(x = INGRESO_OCUP_PRINCIPAL)) +
+      geom_density(alpha = 0.4, fill = "cyan") +
+      theme_minimal() +
+      scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+      scale_x_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+      ggtitle("Distribución Ingreso por Ocupación Principal") +
+      labs(x = "Ingreso por Ocupación Principal",
+         y = "Densidad")
+
+```
+
+    - Como curiosidad, notamos la existencia de picos de densidad en los números "redondos", los cuales asociamos tanto a un sesgo en los encuestados al redondear su salario como a un posible sesgo en los empleadores a la hora de definir los salarios de sus empleados. 
+
+---
+
+## Análisis bivariado y multivariado
+
+A continuación, estudiamos la relación entre el ingreso (considerada variable principal a explicar) y algunas de las variables categóricas presentes en el dataset.
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+data_eph_limpio %>% 
+  group_by(NIVEL_ED) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>% 
+  mutate(NIVEL_ED = fct_inorder(NIVEL_ED)) %>% 
+  ggplot(aes(x = NIVEL_ED, y = ingreso_promedio, fill = NIVEL_ED)) +
+    geom_col() +
+    theme_minimal() +
+    scale_fill_viridis_d(alpha = 0.9, option = "A") +
+    guides(fill = "none") +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_x_discrete(labels = label_wrap(10)) +
+    ggtitle("Ingreso promedio por Ocupación Principal según Nivel Educativo") +
+    labs(x = "Nivel Educativo",
+         y = "Ingreso por Ocupación Principal")
+
+```
+
+    - Como vemos, existe una relación clara entre el nivel educativo de las personas y su remuneración percibida.
+
+    - Lo mismo ocurre con algunas de las demás variables categóricas: Aglomerado, Sexo, Categoría Ocupacional y Categoría/sector.
+    
+### Ingreso por aglomerado, como variable geográfica
+    
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+data_eph_limpio %>% 
+  group_by(AGLOMERADO) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>% 
+  mutate(AGLOMERADO = fct_inorder(AGLOMERADO)) %>% 
+  ggplot(aes(x = ingreso_promedio, y = AGLOMERADO, fill = AGLOMERADO)) +
+    geom_col() +
+    theme_minimal() +
+    scale_fill_viridis_d(option = "B") +
+    guides(fill = "none") +
+    scale_x_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_y_discrete(labels = label_wrap(100)) +
+    ggtitle("Ingreso promedio por Ocupación Principal según Aglomerado") +
+    labs(x = "Ingreso por Ocupación Principal",
+         y = "Aglomerado")
+```
+    - La distribución media de los ingresos por aglomerado nos permite ver aquellas diferencias que surjen del agrupamiento geográfico por las zonas del relevamiento. Se presentan grandes diferencias entre los valores mínimos y máximos.
+
+### Distinción por sexo
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+data_eph_limpio %>% 
+  group_by(SEXO) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>% 
+  mutate(SEXO = fct_inorder(SEXO)) %>% 
+  ggplot(aes(x = SEXO, y = ingreso_promedio, fill = SEXO)) +
+    geom_col(alpha = 0.8, width = 0.5) +
+    theme_minimal() +
+    guides(fill = "none") +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_x_discrete(labels = label_wrap(100)) +
+    ggtitle("Ingreso promedio por Ocupación Principal según Sexo") +
+    labs(x = "Sexo",
+         y = "Ingreso por Ocupación Principal")
+```
+    - Se presenta una considerable brecha de ingresos por ocupación principal cuando distinguimos por Sexo, lo que nos advierte que se trata de una variable relevante para la predicción.
+    
+    
+### Ingreso medio por categoría ocupacional
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+data_eph_limpio %>% 
+  group_by(CAT_OCUP) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>% 
+  mutate(CAT_OCUP = fct_inorder(CAT_OCUP)) %>% 
+  ggplot(aes(x = CAT_OCUP, y = ingreso_promedio, fill = CAT_OCUP)) +
+    geom_col(width = 0.5) +
+    theme_minimal() +
+    guides(fill = "none") +
+    scale_fill_viridis_d(alpha = 0.9, option = "B") +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_x_discrete(labels = label_wrap(100)) +
+    ggtitle("Ingreso promedio por Ocupación Principal según Categoría Ocupacional") +
+    labs(x = "Categoría Ocupacional",
+         y = "Ingreso por Ocupación Principal")
+```
+- La visualización demuestra que la categoría ocupacional es otra variable a ponderar en la predicción del ingreso a partir de la gran diferencia que se halla entre sus medias.
+
+Procedemos a profundizar en el análisis de las distintas subcategorías para percibir si existe variabilidad dentro de cada categoría ocupacional.
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+data_eph_limpio %>% 
+  group_by(CATEGORIA) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>%
+  mutate(CATEGORIA = fct_inorder(CATEGORIA)) %>% 
+  slice_head(n = 10)
+
+data_eph_limpio %>% 
+  group_by(CATEGORIA) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>%
+  mutate(CATEGORIA = fct_inorder(CATEGORIA)) %>% 
+  slice_tail(n = 10)
+
+data_eph_limpio %>% 
+  group_by(CATEGORIA) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>%
+  mutate(CATEGORIA = fct_inorder(CATEGORIA)) %>% 
+  slice(26, 41, 48)
+
+data_eph_limpio %>% 
+  group_by(CATEGORIA) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>%
+  mutate(CATEGORIA = fct_inorder(CATEGORIA)) %>% 
+  ggplot(aes(x = CATEGORIA, y = ingreso_promedio, fill = CATEGORIA)) +
+    geom_col() +
+    theme_minimal() +
+    scale_fill_viridis_d(option = "B") +
+    guides(fill = "none") +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_x_discrete(labels = NULL) +
+    ggtitle("Ingreso promedio por Ocupación Principal según Categoría") +
+    labs(x = "Categoría",
+         y = "Ingreso por Ocupación Principal") +
+    geom_label(data = data_eph_limpio %>% group_by(CATEGORIA) %>% 
+      summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+      arrange(ingreso_promedio) %>%
+      mutate(CATEGORIA = fct_inorder(CATEGORIA)) %>%
+      filter(CATEGORIA %in% c("Ocupaciones de los servicios de alojamiento y turismo",
+                              "Funcionarios del poder ejecutivo nacional, provincial, municipal y/o departamental",
+                              "Ocupaciones de la investigación",
+                              "Funcionarios del poder judicial, federal, nacional, provincial, municipal y/o departamental"))
+    ,aes(label = CATEGORIA),
+    size = 2,
+    colour = "black",
+    nudge_x = -14,
+    nudge_y = 1)
+
+```
+
+### Intensidad de ocupación
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+data_eph_limpio %>% 
+  group_by(INTENSI) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>% 
+  mutate(INTENSI = fct_inorder(INTENSI)) %>% 
+  ggplot(aes(x = INTENSI, y = ingreso_promedio, fill = INTENSI)) +
+    geom_col(width = 0.5) +
+    theme_minimal() +
+    guides(fill = "none") +
+    scale_fill_viridis_d(option = "B") +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_x_discrete(labels = label_wrap(100)) +
+    ggtitle("Ingreso promedio por Ocupación Principal según Intensidad de Ocupación") +
+    labs(x = "Intensidad de Ocupación",
+         y = "Ingreso por Ocupación Principal")
+```
+
+    - En el caso de Intensidad de Ocupación, vemos por un lado la existencia de una variable correspondiente a los Ocupados que declaran no haber trabajado durante la semana previa a la encuesta. Más adelante removeremos estos casos para mejorar el modelo.
+    
+    - Por otro lado, notamos que existe solo una magra diferencia en los promedios salariales de quienes declaran ser ocupados plenos y quienes declaran estar sobreocupados.
+    
+    - Por último, creemos que es posible capturar de mejor manera el factor horas de trabajo mediante la variable numérica correspondiente, la cual analizaremos en detalle posteriormente. 
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+data_eph_limpio %>% 
+    group_by(CALIFICACION) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>% 
+  mutate(CALIFICACION = fct_inorder(CALIFICACION)) %>% 
+  ggplot(aes(x = CALIFICACION, y = ingreso_promedio, fill = CALIFICACION)) +
+    geom_col(width = 0.5) +
+    theme_minimal() +
+    guides(fill = "none") +
+    scale_fill_viridis_d(option = "B") +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_x_discrete(labels = label_wrap(100)) +
+    ggtitle("Ingreso promedio por Ocupación Principal según Calificación") +
+    labs(x = "Calificación",
+         y = "Ingreso por Ocupación Principal")
+```
+
+
+
+```{r, message = FALSE, warning = FALSE}
+datos_imprecisos <- data_eph_limpio %>% select(CALIFICACION) %>% 
+  filter(CALIFICACION %in% c("otro", "Ns.Nc", "falta informacion"))
+
+count(datos_imprecisos)
+```
+
+
+    - La variable de calificación cuenta con algunos sesgos que nos impiden ponderar de forma eficiente sus resultados como función del ingreso. Sin embargo, notamos que aquellos que han sido identificados "Profesionales" cuentan con mayores ingresos que el resto (entre los que se encuentran los Ns. Nc., otros, y los faltos de información).
+
+    - Si bien se trata de sólo 84 valores, consideramos que la cuestión de la calificación y la formación de los encuestados puede ser capturada más nítidamente mediante el nivel educativo.
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+data_eph_limpio %>% 
+  group_by(SECTOR_PUB_PRIV) %>% 
+  summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>% 
+  mutate(SECTOR_PUB_PRIV = fct_inorder(SECTOR_PUB_PRIV)) %>% 
+  ggplot(aes(x = SECTOR_PUB_PRIV, y = ingreso_promedio, fill = SECTOR_PUB_PRIV)) +
+    geom_col(width = 0.5) +
+    theme_minimal() +
+    guides(fill = "none") +
+    scale_fill_viridis_d(option = "D", alpha = 0.8) +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_x_discrete(labels = label_wrap(100)) +
+    ggtitle("Ingreso promedio por Ocupación Principal según Sector") +
+    labs(x = "Sector",
+         y = "Ingreso por Ocupación Principal")
+```
+
+    - Para el caso de la ocupación principal, consideramos:
+    1. la categoría "de otro tipo" no es lo suficientemente clara como para ser relevante y 
+    2. la variable de sector/categoría captura el mismo elemento con mayor claridad. 
+    
+  
+### Estado conyugal
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+unique(data_eph_limpio$ESTADO_CONYUGAL)
+
+data_eph_limpio <- data_eph_limpio %>% 
+  mutate(ESTADO_CONYUGAL = str_remove(ESTADO_CONYUGAL, "\\?")) %>%
+  mutate(ESTADO_CONYUGAL = str_replace_all(ESTADO_CONYUGAL, "divorsiado", "divorciado"))
+
+base_grafico_combi <- data_eph_limpio %>% 
+                        group_by(ESTADO_CONYUGAL) %>% 
+                        summarise(ingreso_promedio = mean(INGRESO_OCUP_PRINCIPAL), edad_promedio = mean(EDAD)) %>% 
+                        arrange(ingreso_promedio) %>% 
+                        mutate(ESTADO_CONYUGAL = fct_inorder(ESTADO_CONYUGAL))
+
+barras <- ggplot(data = base_grafico_combi, aes(x = ESTADO_CONYUGAL, y = ingreso_promedio, fill = ESTADO_CONYUGAL)) +
+              geom_col(width = 0.5) +
+              theme_minimal() +
+              guides(fill = "none") +
+              scale_fill_viridis_d(alpha = 0.8) +
+              scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+              scale_x_discrete(labels = label_wrap(100)) +
+              labs(x = "Estado Conyugal",
+                   y = "Ingreso por Ocupación Principal")
+
+grafico_combi <- barras + geom_point(data = base_grafico_combi, 
+                                     aes(y = edad_promedio*1000), 
+                                     color = "darkgrey") +
+                     scale_y_continuous(sec.axis = sec_axis(trans=~./1000 , name="Edad Promedio"), 
+                     breaks = pretty_breaks(), labels = comma) +
+                     ggtitle("")
+
+grafico_combi
+```
+
+    - Finalmente, tenemos el Estado Conyugal del individuo. Creemos que no es relevante para el análisis dada la correlación existente entre la edad y el estado conyugal de las personas, la cual visualizamos en el gráfico.
+
+    - Analicemos ahora la relación de nuestra variable de estudio con las variables numéricas del data set: Cantidad de Horas de Trabajo y Edad.
+    
+
+
+```{r, message = FALSE, warning = FALSE}
+max(data_eph_limpio$CANT_HORAS)
+
+min(data_eph_limpio$CANT_HORAS)
+
+count(data_eph_limpio %>% filter(CANT_HORAS == 0))
+
+count(data_eph_limpio %>% filter(INTENSI == "Ocupado que no trabajo en la semana"))
+
+```
+
+    - En primer lugar, observamos la existencia de valores absurdos (999 horas trabajadas) en nuestra primer variable, los cuales limpiamos previo a graficar.
+    
+    - Asimismo, vemos una variedad de registros con ingresos mayores a cero y horas trabajadas nulas que corresponden a individuos que declaran no haber trabajado la semana previa (generalmente debido a vacaciones, enfermedad, etc.). Decidimos filtrar estos casos para mejorar la performance del modelo. 
+    
+    
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+data_eph_limpio <- data_eph_limpio %>% 
+  filter(CANT_HORAS > 0 & CANT_HORAS < 168) %>% 
+  filter(INTENSI != "Ocupado que no trabajo en la semana")
+
+data_eph_limpio %>%
+  filter(INGRESO_OCUP_PRINCIPAL < quantile(INGRESO_OCUP_PRINCIPAL, .99)) %>%
+  ggplot(aes(x = CANT_HORAS, y = INGRESO_OCUP_PRINCIPAL, color = INTENSI)) +
+      geom_smooth(
+      method='lm',
+      se = FALSE,
+      color = 'red') + 
+    geom_point() +
+    theme_minimal() +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    ggtitle("Ingreso por Ocupación Principal y Cantidad de Horas Trabajadas") +
+    labs(x = "Cantidad de horas trabajadas",
+         y = "Ingreso por Ocupación Principal",
+         color = "Intensidad de Ocupación")
+
+
+```
+
+    - El gráfico da cuenta de una relación clara entre las dos variables. En el caso de la edad, la relación es un tanto más difusa:
+
+    
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+data_eph_limpio %>%
+  ggplot(aes(x = EDAD, y = INGRESO_OCUP_PRINCIPAL)) +
+      #geom_smooth(
+      #method = "lm",
+      #se = FALSE,
+      #color = 'red') + 
+    geom_point(color = "darkgray") +
+    theme_minimal() +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    ggtitle("Ingreso por Ocupación Principal y Edad") +
+    labs(x = "Edad",
+         y = "Ingreso por Ocupación Principal")
+
+```
+-> Concluímos que, por cómo se distribuyen los datos para la variable *Intensidad de Ocupación*, esta podría ser removida de nuestra regresión en tanto la variable *Cantidad de Horas Trabajadas* cumple un rol similar.
+
+En este caso, vemos que la distribución de los datos se asemeja a una campana de gauss. A priori, consideramos que ello puede estar vinculado con la ocurrencia de menores ingresos pasada la edad jubilatoria. Así lo visualizamos en el siguiente gráfico:
+    
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+data_eph_limpio %>% 
+  mutate(MAYOR_65 = ifelse(EDAD > 65, "Mayor de 65", "Menor de 65")) %>% 
+  group_by(MAYOR_65, SEXO) %>% 
+  summarise(ingreso_promedio = median(INGRESO_OCUP_PRINCIPAL)) %>% 
+  arrange(ingreso_promedio) %>% 
+  mutate(MAYOR_65 = fct_inorder(MAYOR_65)) %>% 
+  ggplot(aes(x = MAYOR_65, y = ingreso_promedio, fill = SEXO)) +
+    geom_col(width = 0.5, position = position_dodge2(preserve = "single", padding = 0), alpha = 0.7) +
+    theme_minimal() +
+    guides() +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_x_discrete(labels = label_wrap(100)) +
+    ggtitle("Mediana del ingreso por Ocupación Principal según edad jubilatoria y sexo") +
+    labs(x = "Sector",
+         y = "Ingreso por Ocupación Principal")
+  
+```
+
+    - Usamos la mediana para atenuar el peso de los outliers y de la disparidad en el número de registros presnetes en cada subgrupo. 
+    
+    - En base a lo visto, creemos que puede ser una buena idea controlar la variable edad por la edad jubilatoria y el sexo.
+    
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+
+data_eph_limpio <- data_eph_limpio %>% 
+  mutate(MAYOR_65 = ifelse(EDAD > 65, "Mayor de 65", "Menor de 65"))
+
+data_eph_limpio %>% filter(EDAD <= 65) %>%                     
+  ggplot(aes(x = EDAD, y = INGRESO_OCUP_PRINCIPAL, color = SEXO)) +
+    geom_smooth(
+        method = "lm",
+        se = FALSE,
+        color = 'red') + 
+    geom_point() +
+    theme_minimal() +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    ggtitle("Ingreso por Ocupación Principal y Edad") +
+    labs(x = "Edad",
+         y = "Ingreso por Ocupación Principal")
+
+```
+
+## Correlación
+
+Proponemos una matriz de correlación con aquellas variables de tipo numéricas.
+
+
+```{r}
+
+data_eph_limpio %>%
+  select_if(is.numeric) %>%
+  cor() %>%
+  corrplot(method = "square", tl.col = "black", tl.srt = 45)
+
+
+```
+
+
+Proponemos como primer aproximaxión la siguiente matriz descriptiva para visualizar distribuciones entre las variables de tipo numéricas.
+
+
+```{r}
+
+data_eph_limpio %>%
+  select_if(is.numeric) %>%
+  ggpairs(labeller = label_wrap_gen(width = 5)) +
+  theme_light() +
+  theme(strip.text.x = element_text(size = 10),
+        strip.text.y = element_text(size = 10))
+
+
+```
+
+
+## Modelización
+
+
+Para corroborar la multicolinealidad que podría afectar a nuestro modelo de regresión, planteamos un modelo simple para nuestra variable explicada INGRESO_OCUP_PRINCIPAL, utlizamos la función vif():
+
+```{r}
+modelo_lineal <- lm(INGRESO_OCUP_PRINCIPAL ~ ., data = data_eph_limpio)
+
+vif(modelo_lineal)
+```
+```{r}
+p <- performance::check_model(modelo_lineal, check = 'vif') %>%
+  plot() +
+  theme(axis.text.x = element_blank())
+```
+
+
+A partir de estos datos, podemos descartar del modelo aquellas variables que presentan multicolinealidad. Vemos que el problema se presenta para algunas de nuestras variables, por lo que procedemos a remover del dataset aquellas dos que más perjudicarían al modelo. Luego, analizamos multicolinealidad nuevamente.
+
+```{r}
+data_eph_lm = subset(data_eph_limpio, select = -c(CALIFICACION, CATEGORIA))
+
+modelo_lineal <- lm(INGRESO_OCUP_PRINCIPAL ~ ., data = data_eph_lm)
+
+vif(modelo_lineal)
+```
+
+```{r}
+
+p <- performance::check_model(modelo_lineal, check = 'vif') %>%
+  plot() +
+  theme(axis.text = element_text(angle = 90))
+```
+
+    - Anulado el problema de multicolinealidad para las variables que formarán parte de nuestro modelo, procedemos a analizar significatividad para las variables restantes.
+  
+
+En primer lugar, aplicamos la conversión a dummy de variables categóricas como recipe para preprocesamiento.Luego, hacemos un summary() donde prestamos especial importancia al test de significatividad.
+
+Este método nos resultará útil a la hora de correr nuestro modelo, aunque por la cantidad de valores que puede tomar la variable aglomerado complica la visualización en formato tabla tras la conversión.
+
+```{r}
+
+# Conversión a dummy de variables categóricas como recipe para preprocesamiento.
+
+recipe_lm <- recipe(INGRESO_OCUP_PRINCIPAL ~ ., data = data_eph_lm) %>%
+            step_dummy(all_nominal(), -all_outcomes())
+
+
+recipe_lm %>% 
+  prep() %>% 
+  juice() %>% 
+  head()
+```
+   
+```{r}
+lmodel <- linear_reg() %>%
+  set_engine("lm")
+
+lm_workflow <- workflow() %>%
+  add_model(lmodel) %>%
+  add_recipe(recipe_lm)
+
+lm_fit <- lm_workflow %>%
+  fit(data = data_eph_lm)
+
+tidy(lm_fit) %>% 
+  select(term,p.value) %>% 
+  filter(p.value > 0.05) %>%
+  arrange(p.value)
+
+```
+Notamos que que algunos de los valores que adopta *AGLOMERADOS* tras su conversión a dummy no son relevantes para el modelo en tanto el p-valor para el test de significatividad individual es suficientemente alto para rechazar. Por esto, decidimos retirar la variable explicativa de nuestro modelo ajustado.
+
+Por otro lado, la variable ROL_HOGAR demuestra lo mismo para algunos de sus valores. Y como se ha visto anteriormente, la brecha de ingresos medios que presenta el valor Jefe/a de hogar con respecto al resto es suficientemente alto como para distinguir este valor del resto. Para nuestro modelo, simplificaremos la dummy a sólo 2 valores, de forma que la variable se ajuste a su forma más significativa.
+
+Por último, notamos que los valores correspondientes a *NIVEL_ED* Sin intrucción son descartables por el nulo significado para el contexto de la investigación y por la practicamente nula participación relativa en el total de la muestra.
+   
+   
+```{r}
+data_eph_lm_ajusted <- data_eph_lm %>%
+  filter(NIVEL_ED != "Sin instruccion") %>%
+  select(-AGLOMERADO, -SECTOR_PUB_PRIV) %>%  
+  mutate(ROL_HOGAR = ifelse(ROL_HOGAR != "Jefe/a", "Otro", ROL_HOGAR))
+
+head(data_eph_lm_ajusted)
+
+```
+Con la nueva base ajustada, pasamos a modelar nuevamente.
+
+```{r}
+
+
+recipe_lm_ajusted <- recipe(INGRESO_OCUP_PRINCIPAL ~ . , data = data_eph_lm_ajusted) %>%
+            step_interact(terms = ~ SEXO:CANT_HORAS + INTENSI:CANT_HORAS + EDAD:CANT_HORAS + EDAD:INTENSI)  %>%
+            step_dummy(all_nominal(), -all_outcomes())
+
+lm_workflow <- workflow() %>%
+  add_model(lmodel) %>%
+  add_recipe(recipe_lm_ajusted)
+
+lm_fit <- lm_workflow %>%
+  fit(data = data_eph_lm_ajusted)
+
+tidy(lm_fit) %>% 
+  select(term,p.value) %>% 
+  filter(p.value > 0.13) %>%
+  arrange(p.value)
+
+```
+Sin contar el valor puntual de la interacción que califica la cantidad de horas y sexo varón (que por motivos que hemos explayado en el análisis exploratorio consideramos relevante), no tenemos  otros resultados para variables no rechazadas en el test de significatividad. Concluimos que podemos proceder al análisis del modelo que hemos planteado.
+
+### Análisis del modelo y predicciones
+
+A partir de una muestra de los errores, plantearemos una visualización que nos permita detectar cómo se distribuyen los mismos.
+
+```{r}
+sample_size <- 500  # Por ejemplo, 500 puntos
+
+# Tomar una muestra aleatoria de tamaño_muestra de los residuos
+residuos_muestra <- augment(lm_fit, new_data = data_eph_lm_ajusted) %>%
+  mutate(.resid = INGRESO_OCUP_PRINCIPAL - .pred) %>%
+  select(.resid, .pred) %>%
+  sample_n(size = sample_size, replace = FALSE)  # sample_n() para tomar la muestra aleatoria
+
+# Graficar los residuos de la muestra aleatoria
+ggplot(residuos_muestra, aes(x = .pred, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = 'dashed') +
+  theme_light()
+```
+
+Con una muestra de mismo tamaño, graficamos los 
+```{r}
+
+datos_muestra <- augment(lm_fit, new_data = data_eph_lm_ajusted) %>%
+  select(INGRESO_OCUP_PRINCIPAL, .pred) %>%
+  sample_n(size = sample_size, replace = FALSE)  
+
+ggplot(datos_muestra, aes(x = INGRESO_OCUP_PRINCIPAL, y = .pred)) +
+    geom_point() +
+    theme_minimal()  +
+    geom_abline(
+      intercept = 0,
+      slope = 1,
+      linewidth = 1,
+      color = "grey"
+    ) +
+    scale_color_viridis(option = "C") +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_x_continuous(labels = comma_format(big.mark = ".", decimal.mark = ","))
+
+```
+
+
+
+```{r}
+datos_muestra <- augment(lm_fit, new_data = data_eph_lm_ajusted) %>%
+  sample_n(size = sample_size, replace = FALSE) %>%
+  mutate(.resid = INGRESO_OCUP_PRINCIPAL - .pred) %>%
+  dplyr::select(INGRESO_OCUP_PRINCIPAL, .pred, .resid)
+
+ggplot(datos_muestra, aes(y = .pred, x = INGRESO_OCUP_PRINCIPAL, color = .resid)) +
+  geom_point() +
+  theme_minimal()  +
+  geom_abline(
+    intercept = 0,
+    slope = 1,
+    linewidth = 1,
+    color = "grey"
+  ) +
+  scale_color_viridis(option = "C") +
+  scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+  scale_x_continuous(labels = comma_format(big.mark = ".", decimal.mark = ","))
+
+```
+
+```{r}
+
+predicciones <- predict(lm_fit, new_data = data_eph_lm_ajusted)
+
+resultados <- tibble(
+  Observado = data_eph_lm_ajusted$INGRESO_OCUP_PRINCIPAL,
+  Predicho = predicciones$.pred
+)
+
+# Calcular métricas de evaluación del modelo
+rmse <- sqrt(mean((resultados$Observado - resultados$Predicho)^2))
+mae <- mean(abs(resultados$Observado - resultados$Predicho))
+r_squared <- cor(resultados$Observado, resultados$Predicho)^2
+
+# Imprimir las métricas de evaluación
+cat("RMSE:", rmse, "\n")
+cat("MAE:", mae, "\n")
+cat("R cuadrado:", r_squared, "\n")
+```
+-> El modelo ha logrado explicar de forma moderada el Ingreso por Ocupación Principal
+
+## Modelo de Bugging
+
+### Split y preprocesamiento
+
+Trabajaremos con el modelo de Random Forest. 
+    - En primer lugar, hacemos un train - test split al 70% de la muestra.
+    - Utilizamos la función *tune()* para el tuneo de hiperparámetros.
+    - Luego, armamos un recipe para preprocesamiento, que convierte a dummy la variable *SEXO* y convierte a indicadores el resto de las categóricas no binarias.
+
+```{r}
+library(recipes)
+set.seed(123)
+data_split <- initial_split(data_eph, prop = 0.7)
+data_train <- training(data_split)
+data_test <- testing(data_split)
+
+
+tree_spec <- bag_tree(
+  cost_complexity = tune(),
+  tree_depth = tune(),
+  min_n = tune()
+  ) %>%
+  set_engine("rpart", times = 25) %>%
+  set_mode("regression")
+
+tree_spec %>% translate()
+
+recipe <- recipe(INGRESO_OCUP_PRINCIPAL ~ ., data = data_train) %>%
+  #step_normalize(all_nominal()) %>%
+  step_integer(all_nominal(), -SEXO) %>%
+  step_dummy(SEXO)
+
+recipe %>% 
+  prep() %>% 
+  juice() %>% 
+  head(2)
+
+```
+
+Trabajamos con el siguiente chunk:
+
+
+tree_bag <- workflow() %>%
+  add_model(tree_spec)%>%
+  add_recipe(recipe)
+
+
+tree_grid <- grid_regular(cost_complexity(), tree_depth(), min_n(), levels = 4)
+
+folds <- vfold_cv(data_train, v = 10)
+tree_rs <- tree_bag %>% 
+  tune_grid(
+  resamples = folds,
+  grid = tree_grid)
+
+  
+La optimización anterior nos ha resultado en un error (aparentemente por límite computacional / de recursos). Por ello, a pesar de que los pasos siguientes requerirían evaluar los resultados del cross validation pasaremos a los resultados del modelo simple sin optimización.
+
+```{r}
+
+tree_spec <- bag_tree() %>%
+  set_engine("rpart", times = 25) %>%
+  set_mode("regression")
+
+tree_bag <- workflow() %>%
+  add_model(tree_spec)%>%
+  add_recipe(recipe)
+
+tree_fit <- tree_bag %>%
+  fit(data = data_train)
+
+# Realizamos predicciones en el conjunto de prueba
+predictions <- tree_fit %>%
+  predict(new_data = data_test)
+
+
+```
+
+```{r}
+extract_fit_parsnip(tree_fit)
+```
+
+```{r}
+test <- tree_fit %>%
+  predict(data_test) %>%
+  bind_cols(data_test, .)
+
+metrics <- test %>%
+  metrics(truth = INGRESO_OCUP_PRINCIPAL, estimate = .pred)
+
+metrics
+
+```
+-> Lógicamente, las métricas del primer modelo representan mayor fiabilidad a los datos reales. La causa principal que hallamos es que en este segundo no logramos llevar a cabo la optimización planteada.
+
+En su capacidad de predicción como modelos de regresión, elegimos el primer modelo por sobre este segundo.
+
+Notamos que a partir de los modelos planteados es dificil establecer una relación lineal entre las variables presentadas como explicativas y el Ingreso por Ocupación Principal pero a su vez el cierto nivel de predicción logrado, sobre todo en el primer modelo de regresión lineal múltiple, nos indica que es posible establecer una relación entre nuestra variable a explicar y el resto del set de datos.
+
+
+
+
+                                                                                                                                        *Tomás Baigorria e Iván Robles Urquiza
+                                                                                                                                                                IDAES - UNSAM*
+

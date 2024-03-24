@@ -3,12 +3,13 @@ title: "TP M3 M4"
 author: "Tomás Emilio Baigorria e Iván Robles Urquiza"
 date: '2024-02-12'
 output:
-  word_document: default
   html_document: default
+  word_document: default
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
 ```
 
 # Preparación y exploración de datos
@@ -31,6 +32,8 @@ library(corrplot)
 library(hrbrthemes)
 library(foreach)
 library(rpart.plot)
+library(car)
+library(baguette)
 ```
 
 ### Preparación del dataset.
@@ -739,8 +742,8 @@ recipe %>%
 
 ```
 
+Trabajamos con el siguiente chunk:
 
-```{r}
 
 tree_bag <- workflow() %>%
   add_model(tree_spec)%>%
@@ -755,9 +758,7 @@ tree_rs <- tree_bag %>%
   resamples = folds,
   grid = tree_grid)
 
-```
-
-
+  
 La optimización anterior nos ha resultado en un error (aparentemente por límite computacional / de recursos). Por ello, a pesar de que los pasos siguientes requerirían evaluar los resultados del cross validation pasaremos a los resultados del modelo simple sin optimización.
 
 ```{r}
@@ -781,8 +782,6 @@ predictions <- tree_fit %>%
 ```
 
 ```{r}
-library(vip)
-
 extract_fit_parsnip(tree_fit)
 ```
 
@@ -801,6 +800,11 @@ metrics
 
 En su capacidad de predicción como modelos de regresión, elegimos el primer modelo por sobre este segundo.
 
+Notamos que a partir de los modelos planteados es dificil establecer una relación lineal entre las variables presentadas como explicativas y el Ingreso por Ocupación Principal pero a su vez el cierto nivel de predicción logrado, sobre todo en el primer modelo de regresión lineal múltiple, nos indica que es posible establecer una relación entre nuestra variable a explicar y el resto del set de datos.
 
 
+
+
+                                                                                                                                        *Tomás Baigorria e Iván Robles Urquiza
+                                                                                                                                                                IDAES - UNSAM*
 
