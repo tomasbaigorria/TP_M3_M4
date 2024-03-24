@@ -1,8 +1,10 @@
 ---
 title: "TP M3 M4"
-author: "Tomás Emilio Baigorria and Iván Robles Urquiza"
-date: "2024-03-05"
-output: html_document
+author: "Tomás Emilio Baigorria e Iván Robles Urquiza"
+date: '2024-02-12'
+output:
+  word_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
