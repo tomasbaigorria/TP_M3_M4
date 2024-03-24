@@ -27,6 +27,8 @@ library(paletteer)
 library(viridis)
 library(corrplot)
 library(hrbrthemes)
+library(foreach)
+library(rpart.plot)
 ```
 
 ### Preparación del dataset.
@@ -419,8 +421,9 @@ data_eph_limpio %>%
          y = "Ingreso por Ocupación Principal")
 
 ```
+-> Concluímos que, por cómo se distribuyen los datos para la variable *Intensidad de Ocupación*, esta podría ser removida de nuestra regresión en tanto la variable *Cantidad de Horas Trabajadas* cumple un rol similar.
 
-    - En este caso, vemos que la distribución de los datos se asemeja a una campana de gauss. A priori, consideramos que ello puede estar vinculado con la ocurrencia de menores ingresos pasada la edad jubilatoria. Así lo visualizamos en el siguiente gráfico:
+En este caso, vemos que la distribución de los datos se asemeja a una campana de gauss. A priori, consideramos que ello puede estar vinculado con la ocurrencia de menores ingresos pasada la edad jubilatoria. Así lo visualizamos en el siguiente gráfico:
     
 ```{r, echo = FALSE, message = FALSE, warning = FALSE}
 data_eph_limpio %>% 
@@ -465,54 +468,6 @@ data_eph_limpio %>% filter(EDAD <= 65) %>%
 
 ```
 
-Aglomerado, Sexo, Categoría Ocupacional y Categoría/sector
-```{r}
-names(data_eph_limpio)
-
-lmodel <- linear_reg() %>%
-  set_engine("lm")
-
-wflow1 <- workflow() %>% 
-  add_model(lmodel) %>% 
-  add_formula(INGRESO_OCUP_PRINCIPAL ~ AGLOMERADO +
-                                       NIVEL_ED +
-                                       SEXO +
-                                       CATEGORIA +
-                                       CAT_OCUP+
-                                       EDAD +
-                                       INTENSI:CANT_HORAS +
-                                       SEXO:CANT_HORAS)  
-                                                
-fit1 <- fit(wflow1, data_eph_limpio)
-
-fit1 %>% 
-  extract_fit_parsnip() %>% 
-  tidy()
-
-
-```
-
-
-```{r}
-
-augment(fit1, new_data = data_eph_limpio) %>% 
-  mutate(.resid = INGRESO_OCUP_PRINCIPAL - .pred) %>%
-  dplyr::select(INGRESO_OCUP_PRINCIPAL, .pred, .resid) %>%
-  #graficamos
-  ggplot(aes(y = .pred, x = INGRESO_OCUP_PRINCIPAL, color = .resid)) +
-    geom_point() +
-    theme_minimal()  +
-    geom_abline(
-      intercept = 0,
-      slope = 1,
-      linewidth = 1,
-      color = "grey"
-    ) +
-    scale_color_viridis(option = "C") +
-    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
-    scale_x_continuous(labels = comma_format(big.mark = ".", decimal.mark = ","))
-
-```
 ## Correlación
 
 Proponemos una matriz de correlación con aquellas variables de tipo numéricas.
@@ -527,8 +482,6 @@ data_eph_limpio %>%
 
 
 ```
-
-
 
 
 Proponemos como primer aproximaxión la siguiente matriz descriptiva para visualizar distribuciones entre las variables de tipo numéricas.
@@ -557,6 +510,295 @@ modelo_lineal <- lm(INGRESO_OCUP_PRINCIPAL ~ ., data = data_eph_limpio)
 
 vif(modelo_lineal)
 ```
+```{r}
+p <- performance::check_model(modelo_lineal, check = 'vif') %>%
+  plot() +
+  theme(axis.text.x = element_blank())
+```
+
+
+A partir de estos datos, podemos descartar del modelo aquellas variables que presentan multicolinealidad. Vemos que el problema se presenta para algunas de nuestras variables, por lo que procedemos a remover del dataset aquellas dos que más perjudicarían al modelo. Luego, analizamos multicolinealidad nuevamente.
+
+```{r}
+data_eph_lm = subset(data_eph_limpio, select = -c(CALIFICACION, CATEGORIA))
+
+modelo_lineal <- lm(INGRESO_OCUP_PRINCIPAL ~ ., data = data_eph_lm)
+
+vif(modelo_lineal)
+```
+
+```{r}
+
+p <- performance::check_model(modelo_lineal, check = 'vif') %>%
+  plot() +
+  theme(axis.text = element_text(angle = 90))
+```
+
+    - Anulado el problema de multicolinealidad para las variables que formarán parte de nuestro modelo, procedemos a analizar significatividad para las variables restantes.
+  
+
+En primer lugar, aplicamos la conversión a dummy de variables categóricas como recipe para preprocesamiento.Luego, hacemos un summary() donde prestamos especial importancia al test de significatividad.
+
+Este método nos resultará útil a la hora de correr nuestro modelo, aunque por la cantidad de valores que puede tomar la variable aglomerado complica la visualización en formato tabla tras la conversión.
+
+```{r}
+
+# Conversión a dummy de variables categóricas como recipe para preprocesamiento.
+
+recipe_lm <- recipe(INGRESO_OCUP_PRINCIPAL ~ ., data = data_eph_lm) %>%
+            step_dummy(all_nominal(), -all_outcomes())
+
+
+recipe_lm %>% 
+  prep() %>% 
+  juice() %>% 
+  head()
+```
+   
+```{r}
+lmodel <- linear_reg() %>%
+  set_engine("lm")
+
+lm_workflow <- workflow() %>%
+  add_model(lmodel) %>%
+  add_recipe(recipe_lm)
+
+lm_fit <- lm_workflow %>%
+  fit(data = data_eph_lm)
+
+tidy(lm_fit) %>% 
+  select(term,p.value) %>% 
+  filter(p.value > 0.05) %>%
+  arrange(p.value)
+
+```
+Notamos que que algunos de los valores que adopta *AGLOMERADOS* tras su conversión a dummy no son relevantes para el modelo en tanto el p-valor para el test de significatividad individual es suficientemente alto para rechazar. Por esto, decidimos retirar la variable explicativa de nuestro modelo ajustado.
+
+Por otro lado, la variable ROL_HOGAR demuestra lo mismo para algunos de sus valores. Y como se ha visto anteriormente, la brecha de ingresos medios que presenta el valor Jefe/a de hogar con respecto al resto es suficientemente alto como para distinguir este valor del resto. Para nuestro modelo, simplificaremos la dummy a sólo 2 valores, de forma que la variable se ajuste a su forma más significativa.
+
+Por último, notamos que los valores correspondientes a *NIVEL_ED* Sin intrucción son descartables por el nulo significado para el contexto de la investigación y por la practicamente nula participación relativa en el total de la muestra.
+   
+   
+```{r}
+data_eph_lm_ajusted <- data_eph_lm %>%
+  filter(NIVEL_ED != "Sin instruccion") %>%
+  select(-AGLOMERADO, -SECTOR_PUB_PRIV) %>%  
+  mutate(ROL_HOGAR = ifelse(ROL_HOGAR != "Jefe/a", "Otro", ROL_HOGAR))
+
+head(data_eph_lm_ajusted)
+
+```
+Con la nueva base ajustada, pasamos a modelar nuevamente.
+
+```{r}
+
+
+recipe_lm_ajusted <- recipe(INGRESO_OCUP_PRINCIPAL ~ . , data = data_eph_lm_ajusted) %>%
+            step_interact(terms = ~ SEXO:CANT_HORAS + INTENSI:CANT_HORAS + EDAD:CANT_HORAS + EDAD:INTENSI)  %>%
+            step_dummy(all_nominal(), -all_outcomes())
+
+lm_workflow <- workflow() %>%
+  add_model(lmodel) %>%
+  add_recipe(recipe_lm_ajusted)
+
+lm_fit <- lm_workflow %>%
+  fit(data = data_eph_lm_ajusted)
+
+tidy(lm_fit) %>% 
+  select(term,p.value) %>% 
+  filter(p.value > 0.13) %>%
+  arrange(p.value)
+
+```
+Sin contar el valor puntual de la interacción que califica la cantidad de horas y sexo varón (que por motivos que hemos explayado en el análisis exploratorio consideramos relevante), no tenemos  otros resultados para variables no rechazadas en el test de significatividad. Concluimos que podemos proceder al análisis del modelo que hemos planteado.
+
+### Análisis del modelo y predicciones
+
+A partir de una muestra de los errores, plantearemos una visualización que nos permita detectar cómo se distribuyen los mismos.
+
+```{r}
+sample_size <- 500  # Por ejemplo, 500 puntos
+
+# Tomar una muestra aleatoria de tamaño_muestra de los residuos
+residuos_muestra <- augment(lm_fit, new_data = data_eph_lm_ajusted) %>%
+  mutate(.resid = INGRESO_OCUP_PRINCIPAL - .pred) %>%
+  select(.resid, .pred) %>%
+  sample_n(size = sample_size, replace = FALSE)  # sample_n() para tomar la muestra aleatoria
+
+# Graficar los residuos de la muestra aleatoria
+ggplot(residuos_muestra, aes(x = .pred, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = 'dashed') +
+  theme_light()
+```
+
+Con una muestra de mismo tamaño, graficamos los 
+```{r}
+
+datos_muestra <- augment(lm_fit, new_data = data_eph_lm_ajusted) %>%
+  select(INGRESO_OCUP_PRINCIPAL, .pred) %>%
+  sample_n(size = sample_size, replace = FALSE)  
+
+ggplot(datos_muestra, aes(x = INGRESO_OCUP_PRINCIPAL, y = .pred)) +
+    geom_point() +
+    theme_minimal()  +
+    geom_abline(
+      intercept = 0,
+      slope = 1,
+      linewidth = 1,
+      color = "grey"
+    ) +
+    scale_color_viridis(option = "C") +
+    scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+    scale_x_continuous(labels = comma_format(big.mark = ".", decimal.mark = ","))
+
+```
+
+
+
+```{r}
+datos_muestra <- augment(lm_fit, new_data = data_eph_lm_ajusted) %>%
+  sample_n(size = sample_size, replace = FALSE) %>%
+  mutate(.resid = INGRESO_OCUP_PRINCIPAL - .pred) %>%
+  dplyr::select(INGRESO_OCUP_PRINCIPAL, .pred, .resid)
+
+ggplot(datos_muestra, aes(y = .pred, x = INGRESO_OCUP_PRINCIPAL, color = .resid)) +
+  geom_point() +
+  theme_minimal()  +
+  geom_abline(
+    intercept = 0,
+    slope = 1,
+    linewidth = 1,
+    color = "grey"
+  ) +
+  scale_color_viridis(option = "C") +
+  scale_y_continuous(labels = comma_format(big.mark = ".", decimal.mark = ",")) +
+  scale_x_continuous(labels = comma_format(big.mark = ".", decimal.mark = ","))
+
+```
+
+```{r}
+
+predicciones <- predict(lm_fit, new_data = data_eph_lm_ajusted)
+
+resultados <- tibble(
+  Observado = data_eph_lm_ajusted$INGRESO_OCUP_PRINCIPAL,
+  Predicho = predicciones$.pred
+)
+
+# Calcular métricas de evaluación del modelo
+rmse <- sqrt(mean((resultados$Observado - resultados$Predicho)^2))
+mae <- mean(abs(resultados$Observado - resultados$Predicho))
+r_squared <- cor(resultados$Observado, resultados$Predicho)^2
+
+# Imprimir las métricas de evaluación
+cat("RMSE:", rmse, "\n")
+cat("MAE:", mae, "\n")
+cat("R cuadrado:", r_squared, "\n")
+```
+-> El modelo ha logrado explicar de forma moderada el Ingreso por Ocupación Principal
+
+## Modelo de Bugging
+
+### Split y preprocesamiento
+
+Trabajaremos con el modelo de Random Forest. 
+    - En primer lugar, hacemos un train - test split al 70% de la muestra.
+    - Utilizamos la función *tune()* para el tuneo de hiperparámetros.
+    - Luego, armamos un recipe para preprocesamiento, que convierte a dummy la variable *SEXO* y convierte a indicadores el resto de las categóricas no binarias.
+
+```{r}
+library(recipes)
+set.seed(123)
+data_split <- initial_split(data_eph, prop = 0.7)
+data_train <- training(data_split)
+data_test <- testing(data_split)
+
+
+tree_spec <- bag_tree(
+  cost_complexity = tune(),
+  tree_depth = tune(),
+  min_n = tune()
+  ) %>%
+  set_engine("rpart", times = 25) %>%
+  set_mode("regression")
+
+tree_spec %>% translate()
+
+recipe <- recipe(INGRESO_OCUP_PRINCIPAL ~ ., data = data_train) %>%
+  #step_normalize(all_nominal()) %>%
+  step_integer(all_nominal(), -SEXO) %>%
+  step_dummy(SEXO)
+
+recipe %>% 
+  prep() %>% 
+  juice() %>% 
+  head(2)
+
+```
+
+
+```{r}
+
+tree_bag <- workflow() %>%
+  add_model(tree_spec)%>%
+  add_recipe(recipe)
+
+
+tree_grid <- grid_regular(cost_complexity(), tree_depth(), min_n(), levels = 4)
+
+folds <- vfold_cv(data_train, v = 10)
+tree_rs <- tree_bag %>% 
+  tune_grid(
+  resamples = folds,
+  grid = tree_grid)
+
+```
+
+
+La optimización anterior nos ha resultado en un error (aparentemente por límite computacional / de recursos). Por ello, a pesar de que los pasos siguientes requerirían evaluar los resultados del cross validation pasaremos a los resultados del modelo simple sin optimización.
+
+```{r}
+
+tree_spec <- bag_tree() %>%
+  set_engine("rpart", times = 25) %>%
+  set_mode("regression")
+
+tree_bag <- workflow() %>%
+  add_model(tree_spec)%>%
+  add_recipe(recipe)
+
+tree_fit <- tree_bag %>%
+  fit(data = data_train)
+
+# Realizamos predicciones en el conjunto de prueba
+predictions <- tree_fit %>%
+  predict(new_data = data_test)
+
+
+```
+
+```{r}
+library(vip)
+
+extract_fit_parsnip(tree_fit)
+```
+
+```{r}
+test <- tree_fit %>%
+  predict(data_test) %>%
+  bind_cols(data_test, .)
+
+metrics <- test %>%
+  metrics(truth = INGRESO_OCUP_PRINCIPAL, estimate = .pred)
+
+metrics
+
+```
+-> Lógicamente, las métricas del primer modelo representan mayor fiabilidad a los datos reales. La causa principal que hallamos es que en este segundo no logramos llevar a cabo la optimización planteada.
+
+En su capacidad de predicción como modelos de regresión, elegimos el primer modelo por sobre este segundo.
+
 
 
 
