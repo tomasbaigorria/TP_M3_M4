@@ -1,6 +1,6 @@
 ---
 title: "TP M3 M4"
-author: "Tomás Emilio Baigorria"
+author: "Tomás Emilio Baigorria and Iván Robles Urquiza"
 date: "2024-03-05"
 output: html_document
 ---
@@ -26,6 +26,7 @@ library(scales)
 library(paletteer)
 library(viridis)
 library(corrplot)
+library(hrbrthemes)
 ```
 
 ### Preparación del dataset.
@@ -86,7 +87,11 @@ data_eph_limpio %>%
 
     - Como curiosidad, notamos la existencia de picos de densidad en los números "redondos", los cuales asociamos tanto a un sesgo en los encuestados al redondear su salario como a un posible sesgo en los empleadores a la hora de definir los salarios de sus empleados. 
 
-- A continuación, estudiamos la relación entre el ingreso y algunas de las variables categóricas presentes en el data set.
+---
+
+## Análisis bivariado y multivariado
+
+A continuación, estudiamos la relación entre el ingreso (considerada variable principal a explicar) y algunas de las variables categóricas presentes en el dataset.
 
 
 ```{r, echo = FALSE, message = FALSE, warning = FALSE}
@@ -113,6 +118,7 @@ data_eph_limpio %>%
 
     - Lo mismo ocurre con algunas de las demás variables categóricas: Aglomerado, Sexo, Categoría Ocupacional y Categoría/sector.
     
+### Ingreso por aglomerado, como variable geográfica
     
 ```{r, echo = FALSE, message = FALSE, warning = FALSE}
 data_eph_limpio %>% 
@@ -131,7 +137,9 @@ data_eph_limpio %>%
     labs(x = "Ingreso por Ocupación Principal",
          y = "Aglomerado")
 ```
+    - La distribución media de los ingresos por aglomerado nos permite ver aquellas diferencias que surjen del agrupamiento geográfico por las zonas del relevamiento. Se presentan grandes diferencias entre los valores mínimos y máximos.
 
+### Distinción por sexo
 
 ```{r, echo = FALSE, message = FALSE, warning = FALSE}
 data_eph_limpio %>% 
@@ -149,7 +157,10 @@ data_eph_limpio %>%
     labs(x = "Sexo",
          y = "Ingreso por Ocupación Principal")
 ```
-
+    - Se presenta una considerable brecha de ingresos por ocupación principal cuando distinguimos por Sexo, lo que nos advierte que se trata de una variable relevante para la predicción.
+    
+    
+### Ingreso medio por categoría ocupacional
 ```{r, echo = FALSE, message = FALSE, warning = FALSE}
 data_eph_limpio %>% 
   group_by(CAT_OCUP) %>% 
@@ -167,6 +178,9 @@ data_eph_limpio %>%
     labs(x = "Categoría Ocupacional",
          y = "Ingreso por Ocupación Principal")
 ```
+- La visualización demuestra que la categoría ocupacional es otra variable a ponderar en la predicción del ingreso a partir de la gran diferencia que se halla entre sus medias.
+
+Procedemos a profundizar en el análisis de las distintas subcategorías para percibir si existe variabilidad dentro de cada categoría ocupacional.
 
 ```{r, echo = FALSE, message = FALSE, warning = FALSE}
 data_eph_limpio %>% 
@@ -221,7 +235,7 @@ data_eph_limpio %>%
 
 ```
 
-- A continuación, visualizamos algunas variables categóricas que consideramos poco significativas para el modelo y explicamos los motivos:
+### Intensidad de ocupación
 
 
 ```{r, echo = FALSE, message = FALSE, warning = FALSE}
@@ -267,6 +281,8 @@ data_eph_limpio %>%
          y = "Ingreso por Ocupación Principal")
 ```
 
+
+
 ```{r, message = FALSE, warning = FALSE}
 datos_imprecisos <- data_eph_limpio %>% select(CALIFICACION) %>% 
   filter(CALIFICACION %in% c("otro", "Ns.Nc", "falta informacion"))
@@ -275,9 +291,9 @@ count(datos_imprecisos)
 ```
 
 
-    - En el caso de la variable Calificación, observamos en primer lugar la existencia de algunos valores poco prácticos para el modelo: "otro", "Ns.Nc." y "falta información".
-    
-    - Si bien se trata de sólo 84 valores, consideramos que la cuestión de la calificación y la formación de los encuestados puede ser capturada más nítidamente mediante el nivel educativo. (debatible)
+    - La variable de calificación cuenta con algunos sesgos que nos impiden ponderar de forma eficiente sus resultados como función del ingreso. Sin embargo, notamos que aquellos que han sido identificados "Profesionales" cuentan con mayores ingresos que el resto (entre los que se encuentran los Ns. Nc., otros, y los faltos de información).
+
+    - Si bien se trata de sólo 84 valores, consideramos que la cuestión de la calificación y la formación de los encuestados puede ser capturada más nítidamente mediante el nivel educativo.
 
 ```{r, echo = FALSE, message = FALSE, warning = FALSE}
 data_eph_limpio %>% 
@@ -297,7 +313,12 @@ data_eph_limpio %>%
          y = "Ingreso por Ocupación Principal")
 ```
 
-    - Para el caso de la ocupación principal, consideramos que 1. la categoría "de otro tipo" no es lo suficientemente clara como para ser relevante y 2. la variable de sector/categoría captura el mismo elemento con mayor claridad. 
+    - Para el caso de la ocupación principal, consideramos:
+    1. la categoría "de otro tipo" no es lo suficientemente clara como para ser relevante y 
+    2. la variable de sector/categoría captura el mismo elemento con mayor claridad. 
+    
+  
+### Estado conyugal
 
 ```{r, echo = FALSE, message = FALSE, warning = FALSE}
 
@@ -335,7 +356,9 @@ grafico_combi
 
     - Finalmente, tenemos el Estado Conyugal del individuo. Creemos que no es relevante para el análisis dada la correlación existente entre la edad y el estado conyugal de las personas, la cual visualizamos en el gráfico.
 
-- Analicemos ahora la relación de nuestra variable de estudio con las variables numéricas del data set: Cantidad de Horas de Trabajo y Edad. 
+    - Analicemos ahora la relación de nuestra variable de estudio con las variables numéricas del data set: Cantidad de Horas de Trabajo y Edad.
+    
+
 
 ```{r, message = FALSE, warning = FALSE}
 max(data_eph_limpio$CANT_HORAS)
@@ -490,4 +513,50 @@ augment(fit1, new_data = data_eph_limpio) %>%
     scale_x_continuous(labels = comma_format(big.mark = ".", decimal.mark = ","))
 
 ```
+## Correlación
+
+Proponemos una matriz de correlación con aquellas variables de tipo numéricas.
+
+
+```{r}
+
+data_eph_limpio %>%
+  select_if(is.numeric) %>%
+  cor() %>%
+  corrplot(method = "square", tl.col = "black", tl.srt = 45)
+
+
+```
+
+
+
+
+Proponemos como primer aproximaxión la siguiente matriz descriptiva para visualizar distribuciones entre las variables de tipo numéricas.
+
+
+```{r}
+
+data_eph_limpio %>%
+  select_if(is.numeric) %>%
+  ggpairs(labeller = label_wrap_gen(width = 5)) +
+  theme_light() +
+  theme(strip.text.x = element_text(size = 10),
+        strip.text.y = element_text(size = 10))
+
+
+```
+
+
+## Modelización
+
+
+Para corroborar la multicolinealidad que podría afectar a nuestro modelo de regresión, planteamos un modelo simple para nuestra variable explicada INGRESO_OCUP_PRINCIPAL, utlizamos la función vif():
+
+```{r}
+modelo_lineal <- lm(INGRESO_OCUP_PRINCIPAL ~ ., data = data_eph_limpio)
+
+vif(modelo_lineal)
+```
+
+
 
